@@ -434,6 +434,18 @@ const SONGS={
        lead:'A5 - - C6 A5 - F5 -  B5 - - D6 B5 - G5 -  G5 - - B5 G5 - E5 -  A5 - - C6 E6 - - -  F5 - A5 - C6 - F6 -  D6 - B5 - G5 - D6 -  E6 - - - C6 - G5 -  C6 - - - - - . .'},
     C:{ch:'Am Am F F C C G G',bass:'half',dr:'k...s...',fill:'ksksssss',arp:1,
        lead:'E5 - - - - - - -  . . A5 - C6 - E6 -  F5 - - - - - - -  . . A5 - C6 - F6 -  G5 - - - - - - -  . . C6 - E6 - G6 -  D6 - - - B5 - - -  G5 - A5 - B5 - D6 -'}}},
+  beat2:{bpm:120,order:['I','A','B'],sec:{
+    I:{ch:'Dm Dm',bass:'oct',dr:'k.s.k.s.',lead:'. . . . . . . .  . . . . . . . .'},
+    A:{ch:'Dm Dm Bb C Dm Dm Bb A',bass:'drive',dr:'k.sk.ks.',fill:'ksksksss',
+       lead:'D5 . F5 D5 . A5 . G5  F5 . E5 . D5 - . .  Bb4 . D5 F5 . Bb5 . A5  G5 . E5 . C5 - . .  D5 . F5 D5 . A5 . C6  Bb5 . A5 . G5 . F5 .  G5 F5 E5 D5 . Bb4 . D5  C#5 - - - E5 - A5 -'},
+    B:{ch:'Gm Gm Dm Dm Bb C A A',bass:'oct',dr:'kshkkshs',fill:'kskskssc',duty:0.5,
+       lead:'G5 . Bb5 . D6 . Bb5 G5  A5 . G5 . F5 . D5 .  F5 A5 . F5 D5 . A4 .  D5 - . D5 F5 . A5 .  Bb5 . A5 Bb5 . D6 . Bb5  C6 . Bb5 . A5 . G5 .  E5 . G5 . A5 . C#6 .  E6 - - - A5 - - -'}}},
+  beat3:{bpm:144,order:['I','A','B'],sec:{
+    I:{ch:'Em Em',bass:'oct',dr:'k.h.k.hh',lead:'. . . . . . . .  . . . . . . . .'},
+    A:{ch:'Em C G D Em C B B',bass:'oct',dr:'khshkhsh',fill:'ksksksss',
+       lead:'E5 E5 . G5 . B5 . G5  E5 . C5 . E5 G5 . .  D5 D5 . G5 . B5 . D6  C6 . A5 . F#5 . D5 .  E5 . G5 B5 . E6 . B5  C6 . G5 . E5 . C5 .  B4 . D#5 . F#5 . A5 .  B5 - - - F#5 - D#5 -'},
+    B:{ch:'C D Em Em C D B B',bass:'drive',dr:'kkshkkss',fill:'kskskssc',duty:0.5,
+       lead:'G5 . E5 . C5 E5 G5 .  A5 . F#5 . D5 F#5 A5 .  B5 . G5 . E5 . B5 E6  D6 . B5 . G5 . E5 .  E6 . C6 . G5 . E5 G5  F#6 . D6 . A5 . F#5 A5  B5 . A5 . G5 . F#5 .  D#6 - - - B5 - - -'}}},
   beat:{bpm:128,order:['I','A','B'],sec:{
     I:{ch:'Am Am',bass:'oct',dr:'k.h.k.h.',lead:'. . . . . . . .  . . . . . . . .'},
     A:{ch:'Am F C G Am F C G',bass:'drive',dr:'khshkhsh',fill:'ksksksss',
@@ -958,9 +970,10 @@ class Runner{
 const PADF=[659,554,440,330];
 function padSound(i,len){ if(!AC||MUTE) return; tone(PADF[i],len||0.28,'square',0.045); tone(PADF[i]/2,len||0.28,'triangle',0.07); }
 class Echo{
-  constructor(score){ this.target=3; this.score=score||[0,0]; this.clock=0; this.endT=-1; this.round=0; this.starter=Math.random()<0.5?0:1; this.litN=0; this.lit=null; this.reset(); }
+  constructor(score){ this.target=3; this.score=score||[0,0]; this.clock=0; this.endT=-1; this.round=0; this.starter=Math.random()<0.5?0:1; this.litN=0; this.lit=null;
+    this.solo=solo&&MODE==='bot'; if(this.solo){ this.goal=ECHO_GOAL[level]; this.target=1; this.lives=3; this.best=0; } this.reset(); }
   rebuild(){ return new Echo(this.score); }
-  reset(){ this.round++; this.seq=[]; this.turn=this.starter; this.starter=1-this.starter; this.addStep(); this.startShow(0.9); this.failP=null; this.why=''; }
+  reset(){ this.round++; this.seq=[]; this.turn=this.solo?0:this.starter; this.starter=1-this.starter; this.addStep(); this.startShow(0.9); this.failP=null; this.why=''; }
   addStep(){ this.seq.push(Math.floor(Math.random()*4)); }
   startShow(wait){ this.state='show'; this.si=-1; this.st=wait||0.55; this.pos=0; }
   stepOn(){ return Math.max(0.2,0.46-0.018*this.seq.length); }
@@ -970,23 +983,29 @@ class Echo{
   down(p,id,x,y){ const i=this.padAt(p,x,y); if(i>=0) this.press(p,i); }
   move(){} up(){}
   press(p,i){ if(this.state!=='input'||p!==this.turn||this.endT>=0) return; this.light(i,'press',p,0.2);
-    if(i===this.seq[this.pos]){ this.pos++; this.tLeft=4; if(this.pos>=this.seq.length){ this.state='ok'; this.st=0.85; sfx.power(); } }
+    if(i===this.seq[this.pos]){ this.pos++; this.tLeft=4; if(this.pos>=this.seq.length){ this.state='ok'; this.st=0.85; sfx.power(); if(this.solo) this.best=Math.max(this.best,this.seq.length); } }
     else this.fail(p,'WRONG PAD'); }
-  fail(p,why){ this.state='fail'; this.failP=p; this.why=why; this.score[1-p]++; sfx.point(); shake(0.2);
+  fail(p,why){ if(this.solo){ this.state='fail'; this.failP=0; this.why=why; this.lives--; sfx.point(); shake(0.2); if(this.lives<=0){ this.score[1]++; this.winner=1; this.endT=2.4; } else this.st=2; return; }
+    this.state='fail'; this.failP=p; this.why=why; this.score[1-p]++; sfx.point(); shake(0.2);
     if(this.score[1-p]>=this.target){ this.winner=1-p; this.endT=2; } else this.st=2.2; }
   update(dt){ this.clock+=dt; if(this.lit){ this.lit.t-=dt; if(this.lit.t<=0) this.lit=null; }
     if(this.endT>=0){ this.endT-=dt; if(this.endT<0) onGameWon(this.winner); return; }
     if(this.state==='show'){ this.st-=dt; if(this.st<=0){ this.si++; if(this.si>=this.seq.length){ this.state='input'; this.pos=0; this.tLeft=4; return; } const on=this.stepOn(); this.light(this.seq[this.si],'show',-1,on); this.st=on+0.14; } }
     else if(this.state==='input'){ this.tLeft-=dt; if(this.tLeft<=0) this.fail(this.turn,'TOO SLOW'); }
-    else if(this.state==='ok'){ this.st-=dt; if(this.st<=0){ this.turn=1-this.turn; this.addStep(); this.startShow(); } }
-    else if(this.state==='fail'){ this.st-=dt; if(this.st<=0) this.reset(); } }
+    else if(this.state==='ok'){ this.st-=dt; if(this.st<=0){ if(this.solo){ if(this.seq.length>=this.goal){ this.score[0]++; this.winner=0; this.endT=2.4; sfx.win(); pop(0,'GOAL REACHED'); return; } this.addStep(); this.startShow(); } else { this.turn=1-this.turn; this.addStep(); this.startShow(); } } }
+    else if(this.state==='fail'){ this.st-=dt; if(this.st<=0){ if(this.solo) this.startShow(0.7); else this.reset(); } } }
+  hudText(p){ return this.solo?'ECHO · GOAL '+this.goal+' · LIVES '+this.lives:null; }
   litFor(p){ if(guestView()&&p===LP()){ const L=NET.echoLocal; if(L&&performance.now()-L.at<200) return {i:L.i,src:'press',p}; if(this.lit&&this.lit.src==='press'&&this.lit.p===p) return null; } return this.lit; }
   draw(){ const {ps,g}=this.padGeom();
     for(let p=0;p<2;p++) view(p,()=>{ const act=this.turn===p, lit=this.litFor(p), n=this.seq.length;
+      if(this.solo&&p===1){ txt('ECHO CHALLENGE',0,-U*26,U*3,FT,COL.dim); txt(this.best+' / '+this.goal,0,-U*12,U*13,FD,COL.p[0]); txt('LONGEST SEQUENCE SO FAR',0,U*1,U*2.6,FT,COL.dim);
+        for(let i=0;i<3;i++){ const x=(i-1)*U*8; ctx.save(); ctx.fillStyle=i<this.lives?COL.storm:COL.line; ctx.beginPath(); ctx.moveTo(x,U*14); ctx.bezierCurveTo(x-U*4,U*10,x-U*2.4,U*7,x,U*9.4); ctx.bezierCurveTo(x+U*2.4,U*7,x+U*4,U*10,x,U*14); ctx.fill(); ctx.restore(); }
+        txt(LEVELS[level]+' · REACH '+this.goal+' IN A ROW',0,U*21,U*2.6,FD,COL.ink,'center',0.8); return; }
       let head='', col=COL.ink;
-      if(this.state==='show') head=act?'WATCH, THEN REPEAT':'WATCH · '+nm(this.turn)+' REPEATS';
+      if(this.state==='show') head=this.solo?'WATCH · '+n+' OF '+this.goal:act?'WATCH, THEN REPEAT':'WATCH · '+nm(this.turn)+' REPEATS';
       else if(this.state==='input') head=act?'YOUR TURN · '+this.pos+' OF '+n:nm(this.turn)+' IS REPEATING';
-      else if(this.state==='ok'){ head='CORRECT! NEXT: '+(act?nm(1-p):'YOU')+' · '+(n+1); col=COL.pow; }
+      else if(this.state==='ok'){ head=this.solo?(n>=this.goal?'GOAL REACHED!':'CORRECT! NEXT: '+(n+1)+' OF '+this.goal):'CORRECT! NEXT: '+(act?nm(1-p):'YOU')+' · '+(n+1); col=COL.pow; }
+      else if(this.solo){ head=this.lives>0?this.why+' · '+this.lives+' '+(this.lives===1?'LIFE':'LIVES')+' LEFT · TRY '+n+' AGAIN':this.why+' · OUT OF LIVES'; col=COL.storm; }
       else { head=this.failP===p?this.why+' · POINT TO '+nm(1-p):nm(this.failP)+' MISSED · POINT TO YOU'; col=this.failP===p?COL.storm:COL.p[p]; }
       txt(head,0,-U*33,U*3.2,FD,col);
       for(let i=0;i<4;i++){ const cx=((i%2)-0.5)*(ps+g), cy=(Math.floor(i/2)-0.5)*(ps+g)+U*4, on=lit&&lit.i===i, dim=!act&&this.state==='input';
@@ -997,7 +1016,8 @@ class Echo{
       if(this.state==='input'&&act){ const w=U*40, k=clamp(this.tLeft/4,0,1); ctx.fillStyle=COL.line; rr(-w/2,ps+g/2+U*12,w,U*1.2,U*0.6); ctx.fill(); ctx.fillStyle=k<0.3?COL.storm:COL.p[p]; rr(-w/2,ps+g/2+U*12,w*k,U*1.2,U*0.6); ctx.fill(); } }); }
   hint(p){}
 }
-Echo.prototype.ai=function(p,dt,lv){ const s=aiState(this,p);
+const ECHO_GOAL=[6,10,15];
+Echo.prototype.ai=function(p,dt,lv){ if(this.solo) return; const s=aiState(this,p);
   if(this.state!=='input'||this.turn!==p){ s.t=rnd(0.55,0.85); return; }
   s.t-=dt; if(s.t>0) return; s.t=rnd(0.3,0.6)*(lv===2?0.8:1);
   const n=this.seq.length, cap=[4,7,11][lv], perr=clamp(0.012+(n>cap?(n-cap)*[0.2,0.16,0.12][lv]:0),0,0.85), want=this.seq[this.pos];
@@ -1066,16 +1086,23 @@ Paint.prototype.ai=function(p,dt,lv){ const P=[{think:0.6,mv:0.62,orb:0.2},{thin
   function steer(){ let dx=s.tx-me.x, dy=s.ty-me.y; const m=Math.hypot(dx,dy)||1; c.joy={id:'bot',ox:0,oy:0,x:dx/m*R*P.mv,y:dy/m*R*P.mv}; } };
 
 /* ================= GAME 8: BEAT DUEL (rhythm) ================= */
-let BEAT_CHART=null;
-function beatChart(){ if(BEAT_CHART) return BEAT_CHART; const C=compileSong(SONGS.beat), n=[];
-  C.steps.forEach((st,i)=>{ if(i<16) return; const t=i*C.e; if(st.dr==='k'&&i%4===0) n.push({t,l:0}); if(st.dr==='s') n.push({t,l:2}); if(st.lead&&i%2===0) n.push({t,l:1}); });
-  BEAT_CHART={notes:n,len:C.steps.length*C.e}; return BEAT_CHART; }
+const BEAT_SONGS=['beat','beat2','beat3'], BEAT_TITLE={beat:'NEON PULSE',beat2:'FUNK MACHINE',beat3:'HYPER DRIVE'}, BEAT_CHARTS={};
+function beatChart(name){ name=name||'beat'; if(BEAT_CHARTS[name]) return BEAT_CHARTS[name];
+  const C=compileSong(SONGS[name]), n=[], H_=i=>{ const x=Math.sin(i*91.7+name.length*13.1)*43758.55; return x-Math.floor(x); };
+  let lane=1, prev=null, lastT=-9;
+  C.steps.forEach((st,i)=>{ if(i<16) return; const t=i*C.e, bar=Math.floor(i/8), pos=i%8;
+    if(st.lead){ const m=st.lead.n;
+      if(prev!=null){ const d=m-prev; if(Math.abs(d)>=7) lane=lane===0?2:lane===2?0:(H_(i)<0.5?0:2); else if(d>0) lane=lane<2?lane+1:1; else if(d<0) lane=lane>0?lane-1:1; else if(H_(i)<0.35) lane=(lane+1+Math.floor(H_(i+3)*2))%3; }
+      prev=m; n.push({t,l:lane}); lastT=t;
+      if(st.crash||(st.lead.len>=4&&H_(i+7)<0.5)) n.push({t,l:lane===0?2:0}); }
+    else if((st.dr==='s'||st.dr==='k'||(st.dr==='h'&&bar>=10))&&t-lastT>C.e*0.9&&H_(i+11)<(bar%4===3?0.9:0.62)){ const l=(lane+1+Math.floor(H_(i+5)*2))%3; n.push({t,l}); lastT=t; } });
+  return BEAT_CHARTS[name]={notes:n,len:C.steps.length*C.e}; }
 const BEAT_LEAD=1.6, LANEC=[0,1,3];
 class Beat{
   constructor(score){ this.target=2; this.score=score||[0,0]; this.clock=0; this.endT=-1; this.round=0; this.reset(); }
   rebuild(){ return new Beat(this.score); }
-  reset(){ this.round++; const ch=beatChart(); this.len=ch.len; this.notes=ch.notes.map(n=>({t:n.t,l:n.l,h:[0,0]}));
-    this.pl=[0,1].map(()=>({s:0,c:0,best:0,fl:[0,0,0],j:null,jt:0,fin:false})); this.t0=Music.restartAt?Music.restartAt('beat',0.7):null; this.tc=-0.7; this.pause=0; this.done=false; this.decided=false; this.finT=0; this.msg=null; this.ais=null; this.lastUp=performance.now(); this.sendT=0; }
+  reset(){ this.round++; this.song=BEAT_SONGS[(this.round-1)%BEAT_SONGS.length]; const ch=beatChart(this.song); this.len=ch.len; this.notes=ch.notes.map(n=>({t:n.t,l:n.l,h:[0,0]}));
+    this.pl=[0,1].map(()=>({s:0,c:0,best:0,fl:[0,0,0],j:null,jt:0,fin:false})); this.t0=Music.restartAt?Music.restartAt(this.song,0.7):null; this.tc=-0.7; this.pause=0; this.done=false; this.decided=false; this.finT=0; this.msg=null; this.ais=null; this.lastUp=performance.now(); this.sendT=0; }
   now(){ return AC&&this.t0!=null?AC.currentTime-this.t0:this.tc; }
   local(p){ return !this.net||p===this.net.lp; }
   down(p,id,x,y){ if(!this.local(p)||this.done||this.pause>0||this.endT>=0) return; const u=local(p,x,y).u; this.hit(p,clamp(Math.floor(u/(W/3)),0,2)); }
@@ -1118,7 +1145,7 @@ class Beat{
       if(P.c>=3) txt(P.c+' STREAK',0,hy-U*14,U*3.2,FD,COL.pow,'center',0.9);
       if(P.jt>0&&P.j) txt(P.j,0,hy-U*20,U*3.6,FD,P.j==='MISS'?COL.storm:P.j==='PERFECT'?COL.pow:COL.ink,'center',Math.min(1,P.jt*3));
       const k=clamp(t/this.len,0,1); ctx.fillStyle=COL.line; ctx.fillRect(-W/2,H/4-U*1.2,W,U*0.8); ctx.fillStyle=COL.p[p]; ctx.fillRect(-W/2,H/4-U*1.2,W*k,U*0.8);
-      if(t<0&&!this.done) txt(Math.ceil(-t)+'',0,-U*10,U*12,FD,COL.ink,'center',0.6);
+      if(t<0.6&&!this.done){ txt('SONG '+this.round+' · '+BEAT_TITLE[this.song],0,-U*24,U*3.4,FD,COL.pow,'center',clamp(1-t,0,1)); if(t<0) txt(Math.ceil(-t)+'',0,-U*10,U*12,FD,COL.ink,'center',0.6); }
       if(this.msg) txt(this.msg,0,-U*10,U*4,FD,COL.ink,'center',0.9); }); }
   hint(p){ const pt=fromLocal(p,W/2,U*2.6); at(p,pt.x,pt.y,()=>txt('TAP THE LANE AS THE NOTE HITS THE RING',0,0,U*2.1,FT,COL.dim,'center',0.7)); }
 }
@@ -1508,10 +1535,11 @@ const GAMES=[
   {key:'draw',song:'dust',name:'QUICK DRAW',how:'Wait in silence. The moment a yellow DRAW! flashes, tap anywhere. Fastest finger takes the point. Tap too early, even on a decoy word or fake beep, and your rival scores.',
    pow:'No power-ups in the finale. Just nerves.',goal:'FIRST TO 5 POINTS',icons:[]},
   {key:'echo',song:'echo',name:'ECHO',how:'The pads light up in a sequence. Repeat it on your own pads. One player starts with one step, the other repeats two, and every turn adds one more. Press a wrong pad or wait too long and your rival scores.',
-   pow:'No power-ups. Just memory, and you get 4 seconds per press.',goal:'FIRST TO 3 POINTS',icons:[]},
+   pow:'No power-ups. Just memory, and you get 4 seconds per press.',goal:'FIRST TO 3 POINTS',icons:[],
+   howBot:'Solo challenge: repeat the sequence on your pads, and every success adds one more step. Reach 6 on Easy, 10 on Normal or 15 on Hard to win. You have 3 lives, and a mistake replays the same sequence.'},
   {key:'paint',song:'paint',name:'PAINT WARS',how:'Drag anywhere in your half to steer your brush and paint the floor in your colour. Bump your rival off their trail. After 30 seconds, whoever covers more of the arena wins the round.',
    pow:'Grab orbs for a paint bomb, nitro or a giant brush.',goal:'FIRST TO 2 ROUNDS',icons:['BLAST','SPEED','BIG']},
-  {key:'beat',song:'beat',name:'BEAT DUEL',how:'Notes fall towards your edge in three lanes. Tap a lane the moment its note reaches the ring. Perfect timing scores most and streaks add a bonus. The higher score after the song wins the round.',
+  {key:'beat',song:'beat',name:'BEAT DUEL',how:'Notes fall towards your edge in three lanes. Tap a lane the moment its note reaches the ring. Perfect timing scores most and streaks add a bonus. The higher score after the song wins the round, and every round plays a different song.',
    pow:'No power-ups. Keep the streak alive.',goal:'FIRST TO 2 SONGS',icons:[]},
 ];
 
@@ -1655,7 +1683,7 @@ function currentLineup(){ const L=DB.lineup; if(L.mode==='all') return allLineup
 const LU=()=>match&&match.lineup&&match.lineup.length?match.lineup:classicLineup();
 const curItem=()=>{ const L=LU(); return L[Math.min(match.gi,L.length-1)]; };
 const curDef=()=>GDEF[curItem().k];
-function goalText(it){ const t=it.t||DEFT[it.k]; let s=GDEF[it.k].goal.replace(/\d+/,t); if(t===1) s=s.replace(/S$/,''); return s; }
+function goalText(it){ if(it.k==='echo'&&solo&&MODE==='bot') return 'REPEAT '+ECHO_GOAL[level]+' IN A ROW'; const t=it.t||DEFT[it.k]; let s=GDEF[it.k].goal.replace(/\d+/,t); if(t===1) s=s.replace(/S$/,''); return s; }
 function lineupLabel(L){ L=L||currentLineup(); return L.length>6?L.length+' GAMES':L.map(x=>SHORT[x.k]).join(' · '); }
 
 /* ---------- points, daily board, stats ---------- */
@@ -1752,7 +1780,7 @@ function attractTick(dt){ if(!attract||attract._w!==W||attract._h!==H){ attract=
 function update(dt){
   UI.sync(); sceneT+=dt; if(shakeT>0) shakeT-=dt; updParts(dt);
   const inG=scene==='countdown'||scene==='play'||scene==='gameEnd';
-  Music.set(scene==='play'&&game&&game.silent?null:inG?curDef().song:'menu');
+  Music.set(scene==='play'&&game&&game.silent?null:inG?(game&&game.song)||curDef().song:'menu');
   if(guestView()){ netGuestTick(dt); creditTick(); return; }
   if(NET&&NET.on) netHostTick(dt);
   creditTick();
@@ -1875,7 +1903,7 @@ function drawIntro(p){ const it=curItem(), g=GDEF[it.k];
   txt(introEyebrow(),0,-U*40,U*3,FT,COL.dim);
   txt(g.name,0,-U*31,U*8.5,FD,COL.ink);
   txt(goalText(it),0,-U*23,U*3,FD,COL.p[p]);
-  const mw=Math.min(U*92,W-U*8); let y=-U*16; wrap(g.how,mw,U*3.2,FT).forEach(l=>{ txt(l,0,y,U*3.2,FT,COL.ink,'center',0.9); y+=U*4.3; });
+  const mw=Math.min(U*92,W-U*8); let y=-U*16; wrap(solo&&g.howBot?g.howBot:g.how,mw,U*3.2,FT).forEach(l=>{ txt(l,0,y,U*3.2,FT,COL.ink,'center',0.9); y+=U*4.3; });
   y+=U*1.5; const n=g.icons.length; g.icons.forEach((k,i)=>{ const x=(i-(n-1)/2)*U*9; drawOrb(x,y,U*3,k,sceneT+i); }); y+=U*6;
   wrap(g.pow,mw,U*2.9,FT).forEach(l=>{ txt(l,0,y,U*2.9,FT,COL.pow,'center',0.9); y+=U*3.9; });
   if(clinched){ const w=leader(); txt(w===p?'YOU HAVE CLINCHED IT · PLAY FOR PRIDE':nm(w)+' CLINCHED IT · PLAY FOR PRIDE',0,U*17.5,U*2.6,FD,COL.p[w],'center',0.9); }
@@ -1885,7 +1913,7 @@ function drawIntro(p){ const it=curItem(), g=GDEF[it.k];
 function drawHud(p){ if(!game) return; const y=-H*0.25+U*5;
   ctx.save(); ctx.globalAlpha=0.55; ctx.font=U*5+'px '+FD; ctx.textBaseline='middle'; ctx.textAlign='right'; ctx.fillStyle=COL.p[p]; ctx.fillText(game.score[p]+'',-U*2.5,y);
   ctx.textAlign='left'; ctx.fillStyle=COL.p[1-p]; ctx.fillText(game.score[1-p]+'',U*2.5,y); ctx.fillStyle=COL.dim; ctx.textAlign='center'; ctx.fillText(':',0,y); ctx.restore();
-  txt((solo&&p===1?'BOT · '+LEVELS[level]+' · ':'')+curDef().name+' · TO '+game.target,0,y+U*5,U*2.2,FT,COL.dim,'center',0.7);
+  txt((game.hudText&&game.hudText(p))||((solo&&p===1?'BOT · '+LEVELS[level]+' · ':'')+curDef().name+' · TO '+game.target),0,y+U*5,U*2.2,FT,COL.dim,'center',0.7);
   const fx=game.effects?game.effects(p):[];
   fx.forEach((e,i)=>{ const x=(i-(fx.length-1)/2)*U*12, yy=y+U*11, bad=e.k==='SHRINK', col=bad?COL.p[1-p]:COL.pow;
     ctx.save(); ctx.globalAlpha=0.85; ctx.strokeStyle=col; ctx.lineWidth=1.5; rr(x-U*5.5,yy-U*2.8,U*11,U*5.6,U*1.4); ctx.stroke(); ctx.restore();
