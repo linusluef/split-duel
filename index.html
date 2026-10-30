@@ -330,7 +330,7 @@ function resize(){
   land=r.width>r.height; SS=Math.min(r.width,r.height); SL=Math.max(r.width,r.height);
   const vd=guestView()&&NET.dims?NET.dims:null; W=vd?vd.W:SS; H=vd?vd.H:SL; S=W; L=H; U=Math.min(W,H/2)/100;
   FK=Math.min(SS/W,SL/H); FX=(SS-W*FK)/2; FY=(SL-H*FK)/2;
-  if(game&&!game.net&&!guestView()){ const k=game._k, tg=game.target; game=game.rebuild(); game._k=k; game.target=tg; }
+  if(game&&!game.net&&!guestView()){ const k=game._k, tg=game.target, gid=game._gid; game=game.rebuild(); game._k=k; game.target=tg; game._gid=gid; }
   if(NET&&NET.on&&NET.role==='host') netSend({t:'dims',W,H});
 }
 function baseTransform(){ if(land) ctx.setTransform(0,-DPR,DPR,0,0,SS*DPR); else ctx.setTransform(DPR,0,0,DPR,0,0);
@@ -580,7 +580,7 @@ class Tank{
     const lim=(fx.RAPID>0||fx.TRIPLE>0)?7:3, angs=fx.TRIPLE>0?[-0.24,0,0.24]:[0], hom=fx.HOMING>0; let n=this.bul.filter(b=>b.o===p).length; if(n>=lim) return;
     const v=S*0.8; let fired=false;
     for(const da of angs){ if(n>=lim) break; const a=t.a+da, tx=t.x+Math.cos(a)*this.r*1.55, ty=t.y+Math.sin(a)*this.r*1.55; if(!this.free(tx,ty,0)) continue;
-      this.bul.push({x:tx,y:ty,vx:Math.cos(a)*v,vy:Math.sin(a)*v,o:p,bn:0,age:0,hom}); n++; fired=true; }
+      this.bul.push({id:(this.bid=(this.bid||0)+1),x:tx,y:ty,vx:Math.cos(a)*v,vy:Math.sin(a)*v,o:p,bn:0,age:0,hom}); n++; fired=true; }
     if(fired){ if(hom) fx.HOMING--; t.cd=fx.RAPID>0?0.13:0.42; t.recoil=1; sfx.shoot();
       burst(t.x+Math.cos(t.a)*this.r*1.6,t.y+Math.sin(t.a)*this.r*1.6,COL.pow,5,U*18); } }
   effects(p){ const fx=this.t[p].fx, e=[]; ['RAPID','TRIPLE','SPEED'].forEach(k=>{ if(fx[k]>0) e.push({k,t:fx[k]}); }); if(fx.HOMING>0) e.push({k:'HOMING',n:fx.HOMING}); if(fx.ARMOR) e.push({k:'ARMOR',n:1}); return e; }
@@ -1073,37 +1073,76 @@ Draw.prototype.ai=function(p,dt,lv){
 
 /* ================= ONLINE: lobbies over PeerJS (WebRTC). The lobby creator's device runs the game; the joiner streams it.
    Rooftop Run runs on both devices from one seed so jumps stay instant; Quick Draw measures each reaction on its own device. ================= */
-NET={on:false,role:null,peer:null,conn:null,code:null,dims:null,fx:null,lastRecv:0,hb:1,snT:0,rsT:0,goAt:0,localX:null,lastDS:null,joinTimer:null};
+NET={on:false,role:null,peer:null,conn:null,fast:null,code:null,dims:null,fx:null,lastRecv:0,hb:1,snT:0,rsT:0,goAt:0,localX:null,lastDS:null,joinTimer:null,
+  buf:[],gid:null,lastHt:-1,off:null,jit:0.01,delay:0.08,lastArr:null,cur:null,fxq:[],own:null,trailB:null};
+const NET_RATE=1/40;
 const NET_PREFIX='splitduel-lobby-', NET_ABC='ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 function LP(){ return NET&&NET.on&&NET.role==='guest'?1:0; }
 function remoteP(){ return solo?1:(NET&&NET.on?1-LP():-1); }
 function onlineAvail(){ return !!(window.Peer&&window.SDInstall&&window.SDInstall.available); }
 function netSend(m){ try{ if(NET.conn&&NET.conn.open) NET.conn.send(m); }catch(e){} }
+function netSendFast(m){ try{ if(NET.fast&&NET.fast.open){ NET.fast.send(m); return; } }catch(e){} netSend(m); }
 for(const k of Object.keys(sfx)){ const f=sfx[k]; sfx[k]=(...a)=>{ if(NET.fx&&!(game&&game.net)) NET.fx.push(['s',k]); return f(...a); }; }
-function netSer(g){ return JSON.stringify(g,function(k,v){ if(this===g&&(k==='ais'||k==='net')) return undefined; if(v instanceof Set) return {__s:[...v]}; if(typeof v==='number') return Math.round(v*100)/100; return v; }); }
+function netSer(g){ return JSON.stringify(g,function(k,v){ if(this===g&&(k==='ais'||k==='net'||k==='trail'||k==='_gid')) return undefined; if(v instanceof Set) return {__s:[...v]}; if(typeof v==='number') return Math.round(v*100)/100; return v; }); }
 function netDe(s){ return JSON.parse(s,(k,v)=>v&&v.__s?new Set(v.__s):v); }
 function netFx(f){ if(f[0]==='b') burst(f[1],f[2],f[3],f[4],f[5]); else if(f[0]==='p') pop(f[1],f[2],f[3]); else if(f[0]==='k') shake(f[1]); else if(f[0]==='s'&&sfx[f[1]]) sfx[f[1]](); }
-function netSnapshot(){ const m={t:'s',sc:scene,cd:countdown,pz:paused,rd:ready,m:match,fx:NET.fx.splice(0),st:seats.map(pubSeat),lu:currentLineup()};
-  if(game){ m.g={k:game._k}; if(game.net){ const r=game.r[0]; m.g.seed=game.netSeed; m.g.rs={h:r.h,al:r.alive,d:game.d}; } else m.g.s=netSer(game); }
+function netSnapshot(){ const m={t:'s',ht:performance.now()/1000,sc:scene,cd:countdown,pz:paused,rd:ready,m:match,fx:NET.fx.splice(0),st:seats.map(pubSeat),lu:currentLineup()};
+  if(game){ m.g={k:game._k,id:game._gid}; if(game.net){ const r=game.r[0]; m.g.seed=game.netSeed; m.g.rs={h:r.h,al:r.alive,d:game.d}; } else m.g.s=netSer(game); }
   return m; }
-function netApply(m){ const ps=scene; scene=m.sc; countdown=m.cd; paused=m.pz; ready=m.rd; match=m.m;
+function netApply(m){
+  if(m.ht!=null){ if(m.ht<=NET.lastHt) return; const now=performance.now()/1000, smp=now-m.ht;
+    if(NET.off==null||smp<NET.off) NET.off=smp; else NET.off+=(smp-NET.off)*0.005;
+    if(NET.lastArr){ const j=Math.abs((now-NET.lastArr.t)-(m.ht-NET.lastArr.ht)); NET.jit=NET.jit*0.92+j*0.08; }
+    NET.lastArr={t:now,ht:m.ht}; NET.lastHt=m.ht;
+    NET.delay+=(clamp(0.02+NET_RATE*1.6+NET.jit*3,0.05,0.22)-NET.delay)*0.05; }
+  const ps=scene; scene=m.sc; countdown=m.cd; paused=m.pz; ready=m.rd; match=m.m;
   if(m.st){ const mine=seats[LP()]; seats=[Object.assign({},m.st[0],{kind:'remote',id:null}),mine]; } if(m.lu) NET.lu=m.lu;
   if(scene!==ps){ sceneT=0; if(scene!=='play'&&scene!=='gameEnd'){ pops=[]; } }
-  if(!m.g) game=null;
-  else if(m.g.k==='run'){ if(!game||game._k!=='run'||game.netSeed!==m.g.seed){ game=new Runner([0,0]); game._k='run'; game.netInit(1,m.g.seed); } if(m.g.rs) game.netRemote(m.g.rs); }
-  else { if(!game||game._k!==m.g.k){ game=MAKERS[m.g.k]([0,0]); game._k=m.g.k; NET.localX=null; }
-    const prev=game.state, pk=JSON.stringify(game.result||null)+(game.score||'')+''; Object.assign(game,netDe(m.g.s)); if(m.g.k==='draw'&&prev!=='go'&&game.state==='go') NET.goAt=performance.now();
-    if(m.g.k==='draw'&&game.result&&game.result.kind==='win'&&game.result.p===LP()&&JSON.stringify(game.result)+(game.score||'')!==pk) statHook('draw',LP(),game.result.ms); }
-  for(const f of m.fx) netFx(f); }
+  if(!m.g){ game=null; NET.buf=[]; NET.gid=null; for(const f of m.fx) netFx(f); return; }
+  if(m.g.k==='run'){ if(!game||game._k!=='run'||game.netSeed!==m.g.seed){ game=new Runner([0,0]); game._k='run'; game.netInit(1,m.g.seed); } if(m.g.rs) game.netRemote(m.g.rs); for(const f of m.fx) netFx(f); return; }
+  if(!game||game._k!==m.g.k||NET.gid!==m.g.id){ game=MAKERS[m.g.k]([0,0]); game._k=m.g.k; NET.gid=m.g.id; NET.buf=[]; NET.cur=null; NET.own=null; NET.trailB=null; NET.localX=null; NET.fxq=[]; }
+  NET.buf.push({ht:m.ht,s:m.g.s,o:netDe(m.g.s)}); if(NET.buf.length>24) NET.buf.shift();
+  if(m.fx.length) NET.fxq.push({ht:m.ht,fx:m.fx});
+  if(!NET.cur) netShow(NET.buf[NET.buf.length-1],0); }
+function netShow(sn,dt){ const k=game._k;
+  if(NET.cur!==sn){ NET.cur=sn; const prev=game.state, pk=JSON.stringify(game.result||null)+(game.score||''); Object.assign(game,netDe(sn.s));
+    if(k==='draw'&&prev!=='go'&&game.state==='go') NET.goAt=performance.now();
+    if(k==='draw'&&game.result&&game.result.kind==='win'&&game.result.p===LP()&&JSON.stringify(game.result)+(game.score||'')!==pk) statHook('draw',LP(),game.result.ms); } }
+/* render the host's game a little in the past and blend between the two updates around that moment */
+function netPlayback(dt){ const B=NET.buf; if(!game||game.net||!B.length) return;
+  const rt=performance.now()/1000-(NET.off||0)-NET.delay;
+  while(NET.fxq.length&&NET.fxq[0].ht<=rt+0.01){ for(const f of NET.fxq.shift().fx) netFx(f); }
+  let i=B.length-1; while(i>0&&B[i-1].ht>rt) i--;
+  const s1=B[i], s0=i>0?B[i-1]:s1, k=s1===s0?1:clamp((rt-s0.ht)/(s1.ht-s0.ht),0,1);
+  netShow(s1,dt); if(game.netLerp) game.netLerp(s0.o,s1.o,k,B[B.length-1].o,dt);
+  if(B.length>2&&B[0].ht<rt-1) B.shift(); }
+const lerp=(a,b,k)=>a+(b-a)*k, alerp=(a,b,k)=>a+angDiff(a,b)*k;
+function chase(key,tx,ty,ta,dt,snap){ let o=NET.own; if(!o||o.key!==key||Math.hypot(tx-o.x,ty-o.y)>snap){ o=NET.own={key,x:tx,y:ty,a:ta}; return o; }
+  const f=Math.min(1,dt*22); o.x+=(tx-o.x)*f; o.y+=(ty-o.y)*f; if(ta!=null) o.a=alerp(o.a,ta,f); return o; }
+Pong.prototype.netLerp=function(o0,o1,k,on,dt){ const a=o0.b, b=o1.b;
+  if(a&&b&&Math.hypot(b.x-a.x,b.y-a.y)<H*0.25){ this.b.x=lerp(a.x,b.x,k); this.b.y=lerp(a.y,b.y,k); }
+  this.px[0]=lerp(o0.px[0],o1.px[0],k); this.wc=[lerp(o0.wc[0],o1.wc[0],k),lerp(o0.wc[1],o1.wc[1],k)];
+  const w=this.wc[1]; this.px[1]=NET.localX!=null?clamp(NET.localX,w/2,W-w/2):lerp(o0.px[1],o1.px[1],k);
+  const T=NET.trailB||(NET.trailB=[]), bp=this.b, l=T[T.length-1]; if(bp.x<-900||(l&&Math.hypot(bp.x-l.x,bp.y-l.y)>H*0.2)) T.length=0; if(bp.x>-900) T.push({x:bp.x,y:bp.y}); if(T.length>16) T.shift(); this.trail=T; };
+Tank.prototype.netLerp=function(o0,o1,k,on,dt){ const me=LP();
+  for(let i=0;i<2;i++){ const t=this.t[i], a=o0.t[i], b=o1.t[i]; if(!a||!b||!t.alive) continue;
+    if(Math.hypot(b.x-a.x,b.y-a.y)<S*0.3){ t.x=lerp(a.x,b.x,k); t.y=lerp(a.y,b.y,k); t.a=alerp(a.a,b.a,k); }
+    if(i===me&&on.t[i]){ const n=on.t[i], c=chase('tank',n.x,n.y,n.a,dt,S*0.3); t.x=c.x; t.y=c.y; t.a=c.a; } }
+  const prev={}; for(const bl of o0.bul||[]) prev[bl.id]=bl; for(const bl of this.bul){ const p=prev[bl.id]; if(p&&Math.hypot(bl.x-p.x,bl.y-p.y)<S*0.25){ bl.x=lerp(p.x,bl.x,k); bl.y=lerp(p.y,bl.y,k); } } };
+Sumo.prototype.netLerp=function(o0,o1,k,on,dt){ const me=LP(); this.R=lerp(o0.R,o1.R,k);
+  for(let i=0;i<2;i++){ const p=this.p[i], a=o0.p[i], b=o1.p[i]; if(!a||!b) continue;
+    if(Math.hypot(b.x-a.x,b.y-a.y)<this.R0*0.5){ p.x=lerp(a.x,b.x,k); p.y=lerp(a.y,b.y,k); }
+    if(i===me&&p.alive&&on.p[i]&&on.p[i].alive){ const n=on.p[i], c=chase('sumo',n.x,n.y,null,dt,this.R0*0.5); p.x=c.x; p.y=c.y; } } };
 function netWatchdog(){ if(NET.on&&performance.now()-NET.lastRecv>6000) netLeave('The connection to your friend was lost.'); }
 function netHostTick(dt){ NET.snT-=dt; NET.hb-=dt;
   const ds=game&&game._k==='draw'?game.state:null, drawGo=ds==='go'&&NET.lastDS!=='go'; NET.lastDS=ds;
-  if(NET.snT<=0||drawGo){ NET.snT=1/30; netSend(netSnapshot()); }
+  if(NET.snT<=0||drawGo){ NET.snT=Math.max(NET.snT+NET_RATE,NET_RATE*0.5); netSendFast(netSnapshot()); }
   netWatchdog(); }
 function netGuestTick(dt){ NET.hb-=dt; if(NET.hb<=0){ NET.hb=1; netSend({t:'hb'}); }
   if(game&&scene==='play'&&!paused){
     if(game.net){ game.update(dt); NET.rsT-=dt; if(NET.rsT<=0){ NET.rsT=1/30; const r=game.r[1]; netSend({t:'rs',h:r.h,al:r.alive,d:game.d}); } }
-    else if(game.predict) game.predict(dt); }
+  }
+  if(game&&!game.net) netPlayback(dt);
   netWatchdog(); }
 function netAction(a){
   if(a==='ready'&&menuScene()) ready[1]=!ready[1];
@@ -1131,13 +1170,14 @@ function netGuestStart(m){ clearTimeout(NET.joinTimer); NET.dims={W:m.W,H:m.H}; 
   seats=[Object.assign(guestSeat(0),{kind:'remote'}),restoreSeat('online',0,1)]; toSeats(); netSend({t:'seat',s:pubSeat(seats[1])}); NetUI.connected(); }
 function netBind(c){
   c.on('open',()=>{ NET.conn=c; NET.lastRecv=performance.now(); NET.hb=1; NET.snT=0; NET.rsT=0;
+    if(NET.role==='guest'&&NET.peer){ try{ const f=NET.peer.connect(c.peer,{reliable:false,serialization:'json',metadata:{ch:'fast'}}); f.on('open',()=>{ NET.fast=f; }); f.on('data',netOnData); f.on('close',()=>{ if(NET.fast===f) NET.fast=null; }); f.on('error',()=>{}); }catch(e){} }
     if(NET.role==='host'){ NET.on=true; NET.fx=[]; solo=false; MODE='online'; game=null; seats=[restoreSeat('online',0,0),Object.assign(guestSeat(1),{kind:'remote'})]; toSeats(); netSend({t:'hello',W,H}); NetUI.connected(); } });
   c.on('data',netOnData);
   c.on('close',()=>{ if(NET.conn===c) netLeave(NET.on?'Your friend left the lobby.':null); });
   c.on('error',()=>{}); }
 function netLeave(msg){ const was=NET.on; clearTimeout(NET.joinTimer);
-  try{ if(NET.conn) NET.conn.close(); }catch(e){} try{ if(NET.peer) NET.peer.destroy(); }catch(e){}
-  Object.assign(NET,{on:false,role:null,peer:null,conn:null,code:null,dims:null,fx:null,localX:null,lastDS:null});
+  try{ if(NET.fast) NET.fast.close(); }catch(e){} try{ if(NET.conn) NET.conn.close(); }catch(e){} try{ if(NET.peer) NET.peer.destroy(); }catch(e){}
+  Object.assign(NET,{on:false,role:null,peer:null,conn:null,fast:null,code:null,dims:null,fx:null,localX:null,lastDS:null,buf:[],gid:null,lastHt:-1,off:null,jit:0.01,delay:0.08,lastArr:null,cur:null,fxq:[],own:null,trailB:null});
   resize(); if(was){ game=null; paused=false; MODE='duel'; goHome(); } if(msg) showToast(msg); }
 function netCode(){ let s=''; for(let i=0;i<4;i++) s+=NET_ABC[Math.floor(Math.random()*NET_ABC.length)]; return s; }
 function peerError(e){ const t=e&&e.type;
@@ -1148,7 +1188,8 @@ function peerError(e){ const t=e&&e.type;
 function netCreate(tries){ tries=tries||0; netLeave(); NET.role='host'; const code=netCode(); NET.code=code; NetUI.status('Creating lobby…','wait');
   const peer=new Peer(NET_PREFIX+code.toLowerCase(),{debug:0}); NET.peer=peer;
   peer.on('open',()=>{ NetUI.hosting(code); NetUI.status('Waiting for your friend to join…','wait'); });
-  peer.on('connection',c=>{ if(NET.conn&&NET.conn.open){ c.on('open',()=>{ try{ c.send({t:'full'}); }catch(e){} setTimeout(()=>{ try{ c.close(); }catch(e){} },600); }); return; } netBind(c); });
+  peer.on('connection',c=>{ if(c.metadata&&c.metadata.ch==='fast'){ if(NET.conn&&NET.conn.open&&c.peer===NET.conn.peer){ c.on('open',()=>{ NET.fast=c; }); c.on('data',netOnData); c.on('close',()=>{ if(NET.fast===c) NET.fast=null; }); c.on('error',()=>{}); } else { try{ c.close(); }catch(e){} } return; }
+    if(NET.conn&&NET.conn.open){ c.on('open',()=>{ try{ c.send({t:'full'}); }catch(e){} setTimeout(()=>{ try{ c.close(); }catch(e){} },600); }); return; } netBind(c); });
   peer.on('disconnected',()=>{ if(!NET.on) try{ peer.reconnect(); }catch(e){} });
   peer.on('error',e=>{ if(e&&e.type==='unavailable-id'&&tries<4){ netCreate(tries+1); return; } if(!NET.on){ NetUI.error(peerError(e)); netLeave(); } }); }
 function netJoin(raw){ const code=String(raw||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
@@ -1193,11 +1234,6 @@ const NetUI=(()=>{
 })();
 
 /* Guest-side smoothing between snapshots */
-Pong.prototype.predict=function(dt){ const b=this.b; if(this.hold<=0&&b.x>-900){ b.x+=b.vx*dt; b.y+=b.vy*dt; if(b.x<this.r){ b.x=this.r; b.vx=Math.abs(b.vx); } if(b.x>W-this.r){ b.x=W-this.r; b.vx=-Math.abs(b.vx); } }
-  if(NET.localX!=null){ const w=this.wc[1]; this.px[1]=clamp(NET.localX,w/2,W-w/2); } };
-Tank.prototype.predict=function(dt){ this.clock+=dt; for(const bl of this.bul){ bl.x+=bl.vx*dt; bl.y+=bl.vy*dt; } };
-Sumo.prototype.predict=function(dt){ this.clock+=dt; for(const b of this.p) if(b.alive){ b.x+=b.vx*dt; b.y+=b.vy*dt; } };
-Draw.prototype.predict=function(dt){ this.clock+=dt; this.flash=Math.max(0,this.flash-dt*2.5); };
 
 /* Rooftop Run online: same seeded course on both devices, crash distances decide the round */
 function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
@@ -1444,7 +1480,7 @@ let ready=[false,false];
 const INTRO_T=REDUCED?0:2.1;
 function startMatch(){ match={id:newId(),wins:[0,0],gi:0,history:[],scores:[],lineup:currentLineup()}; toIntro(); }
 function toIntro(){ scene='intro'; game=null; ready=[false,false]; goT=-1; sceneT=0; introStage=0; parts=[]; pops=[]; }
-function startGame(){ const it=curItem(), k=it.k; game=MAKERS[k]([0,0]); game._k=k; if(it.t) game.target=it.t;
+function startGame(){ const it=curItem(), k=it.k; game=MAKERS[k]([0,0]); game._k=k; game._gid=newId(); if(it.t) game.target=it.t;
   if(NET&&NET.on){ if(k==='run') game.netInit(0,(Math.random()*2147483647)|0); if(k==='draw') game.grace=0.35; }
   scene='countdown'; countdown=3; lastCount=4; sceneT=0; parts=[]; pops=[]; }
 function onGameWon(w){ match.wins[w]++; match.history.push(w); match.scores.push(game?game.score.slice():[0,0]); scene='gameEnd'; sceneT=0; sfx.win(); }
